@@ -1,0 +1,97 @@
+﻿Operating Systems
+Assignment 2
+
+
+Aarushi Agarwal 2016216
+Surabhi S Nath 2016271
+
+
+
+
+     Modifying CFS Scheduler
+
+
+
+
+* Description of your code and how you implemented the function – the logical and implementation details
+
+
+        We implemented the modified CFS Scheduler using the following configurations :-
+* Kernel Version - v3.19.0 
+* OS - Ubuntu Server 14.04.4 
+
+
+In the assignment, we added the functionality of soft real time requirements for certain processes and modified the CFS scheduler.
+To implement this, we first added a field rtnice in the sched_entity and initialized to 0 by default. 
+We then made a syscall sys_rtnice which takes in a PID and rtnice value as arguement and sets the rtnice or soft real time value for that PID. 
+Note, all processes need not have a non positive rtnice value.
+
+
+Our scheduler works in the following manner:
+
+
+1. We give more priority to the soft real time requirements of a process than its vruntime. Hence when we are going to pick a new process to run, we check its rtnice value.
+2. If its rtnice is greater than 0, that means it is a soft real time process, and we will give it priority over the non real time processes.
+3. Among all the processes that requires soft real time guarantees, we run the process with min rtnice value i.e the process which requires the least amount of guaranteed time.
+4. Each time we run a process with soft real time guarantee, we update the corresponding rtnice value for that process. We decrement rtnice value by the amount of time the process ran.
+5. If there are no processes with soft real time requirements that is all of them have rtnice=0, we will pick according to their vruntimes just like the normal CFS scheduler works. 
+
+
+
+
+
+
+
+
+
+
+To implement all the above points, we modified two methods in kernel/sched/fair.c file.
+ 
+   * pick_next_entity() - To pick the next process satisfying the above constraints, as per soft real time requirement. We iterate over all processes and find the process having minimum positive rtnice value. We give this process the CPU.
+
+
+   * update_curr() - To modify the rtnice value of a parcticular process every time it runs. Rtnice is decremented by delta_exec which denotes the time the process executed. We also added the check here to ensure the vruntime value is not updated if rtnice value is updated. If rtnice value is not updated, only then is the vruntime value changed.
+
+
+
+
+* Description of how to compile and test the program
+        
+With respect to our sample code:
+
+
+For testing the functionality, we made a c file named userspace.c. In this function we take 2 inputs from the user:
+1. PID of this process 
+2. rtnice value for that process
+
+
+Then we call the syscall (rtnice) for that   process (to set the corresponding rtnice value). 
+For testing with and without the modified scheduler, we forked the current process and the syscall is called only for the parent process. 
+We execute a 10^9 loop in the parent and a 5 x 10^9 loop in the child. We assign a rtnice of value say 100 to the child and do not assign any rtnice value to the parent. Considering both run concurrently, the parent will end it's execution first since the loop is shorter in parent. However, we see that the child executes before the parent due to it's rtnice value.
+Thus the processes with rtnice values are given priority. Hence the child runs before the parent.
+Also, running the same set of processes on the old and modified scheduler produces a time difference. We observe that the program is executed faster in case of the modified scheduler compared to the old scheduler. The old scheduler is equivalent to rtnice value of 0.
+           
+* The inputs the user should give
+
+
+The user should run userspace.c. After which user needs to input the PID and the corresponding rtnice value. Note, the user can assign rtnice to as many processes through several system calls. Using one call, rtnice value is set for one process.
+
+
+* Expected output (and how to interpret it)
+
+
+The output is the time taken by the process with and without modifying the CFS scheduler along with the corresponding PID of process. The child process run before the parent (when system call is applied to child). The time taken as per modified scheduling algorithm is lesser than that taken by original CFS scheduling algorithm.
+
+
+
+
+
+
+* Error values and how to interpret them
+
+
+We have handled the following two errors:
+
+
+1. I/O error EIO, returns 5 - The user is expected to enter a PID and rtnice value of int form only. 
+2. No such process ESRCH, returns 3 - In case the PID doesn't exist, an error is thrown.
